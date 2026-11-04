@@ -1,0 +1,6 @@
+:root { color-scheme: light; }
+html, body, #root { height: 100%; margin: 0; }
+body { font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background: #EEF0F3; color: #2B2F36; }
+.page-title { margin: 0 0 16px; font-size: 20px; font-weight: 600; color: #0A2A8F; }
+.toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; justify-content: space-between; }
+.kpi-label { color: #6b7280; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }

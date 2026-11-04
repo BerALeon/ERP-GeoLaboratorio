@@ -1,0 +1,12 @@
+bin/
+obj/
+node_modules/
+dist/
+backend/src/Geolaboratorio.Api/storage/
+*.user
+.vs/
+appsettings.Production.json
+*.db
+*.db-shm
+*.db-wal
+

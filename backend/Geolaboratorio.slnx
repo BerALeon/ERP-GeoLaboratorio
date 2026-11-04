@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Geolaboratorio.Api/Geolaboratorio.Api.csproj" />
+    <Project Path="src/Geolaboratorio.Application/Geolaboratorio.Application.csproj" />
+    <Project Path="src/Geolaboratorio.Domain/Geolaboratorio.Domain.csproj" />
+    <Project Path="src/Geolaboratorio.Infrastructure/Geolaboratorio.Infrastructure.csproj" />
+  </Folder>
+</Solution>
