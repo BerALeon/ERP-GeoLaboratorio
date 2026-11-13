@@ -6,12 +6,15 @@ import {
   DownloadOutlined,
   EyeOutlined,
   FileProtectOutlined,
+  PictureOutlined,
   PlusOutlined,
   QrcodeOutlined,
+  ReloadOutlined,
   SearchOutlined,
   SwapOutlined,
   ToolOutlined,
   UserAddOutlined,
+  VideoCameraOutlined,
 } from '@ant-design/icons'
 import {
   Alert,
@@ -223,6 +226,353 @@ function SignaturePad({
   )
 }
 
+const CONDICIONES_OTRO_STORAGE_KEY = 'geolab_condiciones_otro_v1'
+const CONDICIONES_OTRO_INICIALES = [
+  'Lente empañado / sucio',
+  'Plomada láser descalibrada',
+  'Tornillo nivelante duro / barrido',
+  'Tapa de batería dañada',
+  'Puerto / conector con falso contacto',
+  'Burbuja circular desajustada',
+]
+
+function loadLocalCondicionesOtro(): string[] {
+  try {
+    const raw = localStorage.getItem(CONDICIONES_OTRO_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw) as string[]
+      if (Array.isArray(parsed)) return parsed
+    }
+  } catch {
+    // ignore
+  }
+  return CONDICIONES_OTRO_INICIALES
+}
+
+function saveLocalCondicionesOtro(items: string[]) {
+  try {
+    const unique = Array.from(new Set([...CONDICIONES_OTRO_INICIALES, ...items.map((x) => x.trim()).filter(Boolean)]))
+    localStorage.setItem(CONDICIONES_OTRO_STORAGE_KEY, JSON.stringify(unique))
+  } catch {
+    // ignore
+  }
+}
+
+/** Modal que detecta si el dispositivo tiene cámara y permite elegir entre tomar foto al instante o seleccionar de galería */
+function PhotoCaptureModal({
+  open,
+  onClose,
+  categoriaInicial,
+  descripcionInicial,
+  onConfirm,
+}: {
+  open: boolean
+  onClose: () => void
+  categoriaInicial: string
+  descripcionInicial: string
+  onConfirm: (foto: { categoria: string; descripcion: string; imagenUrl: string }) => void
+}) {
+  const { message } = App.useApp()
+  const [categoria, setCategoria] = useState(categoriaInicial)
+  const [descripcion, setDescripcion] = useState(descripcionInicial)
+  const [modo, setModo] = useState<'seleccion' | 'camara'>('seleccion')
+  const [tieneCamara, setTieneCamara] = useState<boolean | null>(null)
+  const [camaras, setCamaras] = useState<MediaDeviceInfo[]>([])
+  const [camaraActivaIdx, setCamaraActivaIdx] = useState(0)
+  const [previewDataUrl, setPreviewDataUrl] = useState<string>('')
+  const [camError, setCamError] = useState<string>()
+
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  const detenerStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    if (!open) {
+      detenerStream()
+      setModo('seleccion')
+      setPreviewDataUrl('')
+      setCamError(undefined)
+      return
+    }
+    setCategoria(categoriaInicial)
+    setDescripcion(descripcionInicial)
+    setModo('seleccion')
+    setPreviewDataUrl('')
+    setCamError(undefined)
+
+    // Detectar si el equipo cuenta con dispositivos de cámara de video
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) {
+      setTieneCamara(false)
+      return
+    }
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((devices) => {
+        const videoInputs = devices.filter((d) => d.kind === 'videoinput')
+        setCamaras(videoInputs)
+        setTieneCamara(videoInputs.length > 0)
+      })
+      .catch(() => setTieneCamara(false))
+  }, [open, categoriaInicial, descripcionInicial])
+
+  const iniciarCamara = async (idx = camaraActivaIdx) => {
+    detenerStream()
+    setCamError(undefined)
+    setPreviewDataUrl('')
+    setModo('camara')
+    try {
+      const deviceId = camaras[idx]?.deviceId
+      const constraints: MediaStreamConstraints = {
+        video: deviceId
+          ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+          : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: false,
+      }
+      const stream = await navigator.mediaDevices.getUserMedia(constraints)
+      streamRef.current = stream
+      setTieneCamara(true)
+      // Actualizar lista de cámaras con etiquetas tras conceder permiso
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      setCamaras(devices.filter((d) => d.kind === 'videoinput'))
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.play().catch(() => {})
+        }
+      }, 60)
+    } catch {
+      setCamError('No se pudo acceder a la cámara. Verifique los permisos del navegador o seleccione la imagen desde la galería.')
+    }
+  }
+
+  const tomarFotoInstantanea = () => {
+    const v = videoRef.current
+    if (!v || !v.videoWidth) {
+      message.warning('Espere un momento a que inicie el video de la cámara')
+      return
+    }
+    const canvas = document.createElement('canvas')
+    canvas.width = v.videoWidth
+    canvas.height = v.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    ctx.drawImage(v, 0, 0, canvas.width, canvas.height)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.88)
+    setPreviewDataUrl(dataUrl)
+    detenerStream()
+  }
+
+  const confirmarFotoCapturada = () => {
+    if (!previewDataUrl) return
+    onConfirm({
+      categoria,
+      descripcion: descripcion.trim(),
+      imagenUrl: previewDataUrl,
+    })
+    detenerStream()
+    onClose()
+  }
+
+  return (
+    <Modal
+      open={open}
+      onCancel={() => {
+        detenerStream()
+        onClose()
+      }}
+      footer={null}
+      width={620}
+      title={
+        <Space>
+          <CameraOutlined />
+          <span>Capturar o Adjuntar Evidencia Fotográfica</span>
+        </Space>
+      }
+      destroyOnClose
+    >
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 10, marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Categoría de evidencia</div>
+          <Select
+            value={categoria}
+            onChange={setCategoria}
+            style={{ width: '100%' }}
+            options={CATEGORIAS_FOTO.map((c) => ({ value: c, label: c }))}
+          />
+        </div>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Descripción / Observación (opcional)</div>
+          <Input
+            placeholder="Ej. Golpe en carcasa lateral, etiqueta de serie..."
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {tieneCamara !== null && (
+        <Alert
+          type={tieneCamara ? 'info' : 'warning'}
+          showIcon
+          style={{ marginBottom: 14 }}
+          message={
+            tieneCamara
+              ? 'Se detectó cámara disponible en este equipo. ¿Desea tomar la fotografía en este instante o seleccionarla de la galería?'
+              : 'No se detectó cámara conectada en este equipo. Puede seleccionar la fotografía desde su galería o archivos.'
+          }
+        />
+      )}
+
+      {modo === 'seleccion' && (
+        <Row gutter={12}>
+          <Col xs={24} sm={12}>
+            <Card
+              hoverable={tieneCamara !== false}
+              style={{
+                textAlign: 'center',
+                borderColor: tieneCamara ? '#0A2A8F' : '#d9d9d9',
+                opacity: tieneCamara === false ? 0.65 : 1,
+                height: '100%',
+              }}
+              onClick={() => iniciarCamara(0)}
+            >
+              <VideoCameraOutlined style={{ fontSize: 36, color: '#0A2A8F', marginBottom: 8 }} />
+              <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Tomar Foto con la Cámara</div>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                Abrir la cámara del dispositivo y capturar la fotografía en este instante
+              </Typography.Text>
+              <div style={{ marginTop: 12 }}>
+                <Button type="primary" icon={<CameraOutlined />}>
+                  Abrir Cámara Ahora
+                </Button>
+              </div>
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={12}>
+            <Upload
+              accept="image/*"
+              multiple
+              showUploadList={false}
+              beforeUpload={(file) => {
+                const reader = new FileReader()
+                reader.onload = () => {
+                  onConfirm({
+                    categoria,
+                    descripcion: descripcion.trim(),
+                    imagenUrl: String(reader.result),
+                  })
+                  onClose()
+                }
+                reader.readAsDataURL(file)
+                return false
+              }}
+            >
+              <Card
+                hoverable
+                style={{ textAlign: 'center', borderColor: '#2E7D32', height: '100%', cursor: 'pointer' }}
+              >
+                <PictureOutlined style={{ fontSize: 36, color: '#2E7D32', marginBottom: 8 }} />
+                <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>Seleccionar de la Galería</div>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Elegir una o varias imágenes guardadas en el dispositivo o galería
+                </Typography.Text>
+                <div style={{ marginTop: 12 }}>
+                  <Button icon={<PictureOutlined />}>Elegir de Galería / Archivos</Button>
+                </div>
+              </Card>
+            </Upload>
+          </Col>
+        </Row>
+      )}
+
+      {modo === 'camara' && (
+        <div>
+          {camError ? (
+            <Alert
+              type="error"
+              showIcon
+              message={camError}
+              action={
+                <Button size="small" onClick={() => setModo('seleccion')}>
+                  Volver a opciones
+                </Button>
+              }
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
+
+          {!previewDataUrl ? (
+            <div style={{ textAlign: 'center' }}>
+              <div
+                style={{
+                  background: '#000',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  maxHeight: 340,
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  playsInline
+                  muted
+                  style={{ width: '100%', maxHeight: 340, objectFit: 'contain' }}
+                />
+              </div>
+              <Space style={{ marginTop: 12 }} wrap>
+                <Button onClick={() => { detenerStream(); setModo('seleccion') }}>
+                  Volver
+                </Button>
+                {camaras.length > 1 && (
+                  <Button
+                    icon={<ReloadOutlined />}
+                    onClick={() => {
+                      const next = (camaraActivaIdx + 1) % camaras.length
+                      setCamaraActivaIdx(next)
+                      iniciarCamara(next)
+                    }}
+                  >
+                    Cambiar Cámara ({camaraActivaIdx + 1}/{camaras.length})
+                  </Button>
+                )}
+                <Button type="primary" size="large" icon={<CameraOutlined />} onClick={tomarFotoInstantanea}>
+                  Capturar Foto
+                </Button>
+              </Space>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center' }}>
+              <img
+                src={previewDataUrl}
+                alt="Vista previa"
+                style={{ width: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 8, border: '1px solid #d1d5db' }}
+              />
+              <Space style={{ marginTop: 12 }}>
+                <Button icon={<ReloadOutlined />} onClick={() => iniciarCamara(camaraActivaIdx)}>
+                  Repetir Toma
+                </Button>
+                <Button type="primary" size="large" icon={<CheckCircleOutlined />} onClick={confirmarFotoCapturada}>
+                  Usar y Adjuntar esta Foto
+                </Button>
+              </Space>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
 export default function OrdenesServicioPage() {
   const { message } = App.useApp()
   const nav = useNavigate()
@@ -244,6 +594,13 @@ export default function OrdenesServicioPage() {
   const [fotosRecepcion, setFotosRecepcion] = useState<{ categoria: string; descripcion: string; imagenUrl: string }[]>([])
   const [catFotoNueva, setCatFotoNueva] = useState('Equipo completo')
   const [descFotoNueva, setDescFotoNueva] = useState('')
+  const [photoModalTarget, setPhotoModalTarget] = useState<'recepcion' | 'detalle' | null>(null)
+
+  // Condición física "Otro (Especificar)" con memoria de catálogo
+  const [otroCondicionActivo, setOtroCondicionActivo] = useState(false)
+  const [condicionesOtroSel, setCondicionesOtroSel] = useState<string[]>([])
+  const [nuevaCondicionTexto, setNuevaCondicionTexto] = useState('')
+  const [catalogoOtroLocal, setCatalogoOtroLocal] = useState<string[]>(() => loadLocalCondicionesOtro())
 
   // Sub-modales sin abandonar la captura
   const [nuevoClienteOpen, setNuevoClienteOpen] = useState(false)
@@ -302,6 +659,27 @@ export default function OrdenesServicioPage() {
     enabled: !!detalleId,
     queryFn: async () => (await api.get<Paged<Producto>>('/inventario/productos', { params: { size: 200 } })).data.items,
   })
+
+  const { data: condicionesPersonalizadasServidor } = useQuery({
+    queryKey: ['condiciones-personalizadas-os'],
+    enabled: recepcionOpen,
+    queryFn: async () => (await api.get<string[]>('/ordenes-servicio/condiciones-personalizadas')).data,
+  })
+
+  const opcionesCondicionOtro = Array.from(
+    new Set([...catalogoOtroLocal, ...(condicionesPersonalizadasServidor ?? [])]),
+  ).sort((a, b) => a.localeCompare(b, 'es'))
+
+  const agregarNuevaCondicionCatalogo = (textoRaw?: string) => {
+    const val = (textoRaw ?? nuevaCondicionTexto).trim()
+    if (!val) return
+    const nuevasOpciones = Array.from(new Set([...catalogoOtroLocal, val]))
+    setCatalogoOtroLocal(nuevasOpciones)
+    saveLocalCondicionesOtro(nuevasOpciones)
+    setCondicionesOtroSel((prev) => (prev.includes(val) ? prev : [...prev, val]))
+    setNuevaCondicionTexto('')
+    message.success(`Condición «${val}» agregada y guardada para futuras órdenes`)
+  }
 
   // Si viene desde un equipo con ?equipoId=X&nueva=1
   useEffect(() => {
@@ -364,20 +742,37 @@ export default function OrdenesServicioPage() {
   }
 
   const crearOrden = useMutation({
-    mutationFn: (v: Record<string, unknown>) =>
-      api.post<OrdenServicio>('/ordenes-servicio', {
+    mutationFn: (v: Record<string, unknown>) => {
+      const baseConds = ((v.condicionEquipo as string[]) ?? []).filter((c) => c !== 'Otro')
+      const extras = otroCondicionActivo ? [...condicionesOtroSel] : []
+      if (otroCondicionActivo && nuevaCondicionTexto.trim()) {
+        extras.push(nuevaCondicionTexto.trim())
+      }
+      if (extras.length > 0) {
+        const actualizado = Array.from(new Set([...catalogoOtroLocal, ...extras]))
+        setCatalogoOtroLocal(actualizado)
+        saveLocalCondicionesOtro(actualizado)
+      }
+      const condicionFinal = Array.from(new Set([...baseConds, ...extras]))
+      return api.post<OrdenServicio>('/ordenes-servicio', {
         ...v,
+        condicionEquipo: condicionFinal,
         metodoIdentificacion: metodoId,
         fechaCompromiso: v.fechaCompromiso ? (v.fechaCompromiso as dayjs.Dayjs).format('YYYY-MM-DD') : null,
         fotografiasIniciales: fotosRecepcion,
-      }),
+      })
+    },
     onSuccess: (res) => {
       message.success(`Orden de Servicio generada: ${res.data.folio}`)
       setRecepcionOpen(false)
       setBusquedaResult(null)
       setFotosRecepcion([])
+      setOtroCondicionActivo(false)
+      setCondicionesOtroSel([])
+      setNuevaCondicionTexto('')
       formRecepcion.resetFields()
       qc.invalidateQueries({ queryKey: ['ordenes-servicio'] })
+      qc.invalidateQueries({ queryKey: ['condiciones-personalizadas-os'] })
       qc.invalidateQueries({ queryKey: ['dashboard'] })
     },
     onError: (e) => message.error(errorMessage(e)),
@@ -755,7 +1150,7 @@ export default function OrdenesServicioPage() {
 
             <Col xs={24} md={10}>
               <Card size="small" title="Condición Física del Equipo" style={{ marginBottom: 12 }}>
-                <Form.Item name="condicionEquipo" style={{ marginBottom: 0 }}>
+                <Form.Item name="condicionEquipo" style={{ marginBottom: 6 }}>
                   <Checkbox.Group style={{ width: '100%' }}>
                     <Row gutter={[8, 6]}>
                       {CONDICIONES_BASE.map((item) => (
@@ -766,6 +1161,57 @@ export default function OrdenesServicioPage() {
                     </Row>
                   </Checkbox.Group>
                 </Form.Item>
+                <Checkbox
+                  checked={otroCondicionActivo}
+                  onChange={(e) => setOtroCondicionActivo(e.target.checked)}
+                  style={{ fontWeight: 500, color: '#0A2A8F' }}
+                >
+                  Otro (Especificar)
+                </Checkbox>
+
+                {otroCondicionActivo && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: 10,
+                      background: '#f8fafc',
+                      border: '1px dashed #0A2A8F',
+                      borderRadius: 6,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>
+                      Seleccionar de condiciones guardadas o escribir nuevas:
+                    </div>
+                    <Select
+                      mode="tags"
+                      style={{ width: '100%', marginBottom: 8 }}
+                      placeholder="Seleccione de la lista o escriba otra condición..."
+                      value={condicionesOtroSel}
+                      onChange={(vals) => {
+                        setCondicionesOtroSel(vals)
+                        const actualizadas = Array.from(new Set([...catalogoOtroLocal, ...vals]))
+                        setCatalogoOtroLocal(actualizadas)
+                        saveLocalCondicionesOtro(actualizadas)
+                      }}
+                      options={opcionesCondicionOtro.map((c) => ({ value: c, label: c }))}
+                    />
+                    <Space.Compact style={{ width: '100%' }}>
+                      <Input
+                        size="small"
+                        placeholder="Especificar nueva condición y guardar en lista..."
+                        value={nuevaCondicionTexto}
+                        onChange={(e) => setNuevaCondicionTexto(e.target.value)}
+                        onPressEnter={(e) => {
+                          e.preventDefault()
+                          agregarNuevaCondicionCatalogo()
+                        }}
+                      />
+                      <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => agregarNuevaCondicionCatalogo()}>
+                        Guardar en lista
+                      </Button>
+                    </Space.Compact>
+                  </div>
+                )}
               </Card>
             </Col>
           </Row>
@@ -801,24 +1247,14 @@ export default function OrdenesServicioPage() {
                 />
               </Col>
               <Col xs={24} md={8}>
-                <Upload
-                  accept="image/*"
-                  showUploadList={false}
-                  beforeUpload={(file) => {
-                    const reader = new FileReader()
-                    reader.onload = () => {
-                      setFotosRecepcion((prev) => [
-                        ...prev,
-                        { categoria: catFotoNueva, descripcion: descFotoNueva, imagenUrl: String(reader.result) },
-                      ])
-                      setDescFotoNueva('')
-                    }
-                    reader.readAsDataURL(file)
-                    return false
-                  }}
+                <Button
+                  type="primary"
+                  ghost
+                  icon={<CameraOutlined />}
+                  onClick={() => setPhotoModalTarget('recepcion')}
                 >
-                  <Button icon={<CameraOutlined />}>Capturar / Adjuntar Fotografía</Button>
-                </Upload>
+                  Capturar / Adjuntar Fotografía
+                </Button>
               </Col>
             </Row>
             {fotosRecepcion.length > 0 && (
@@ -1107,27 +1543,14 @@ export default function OrdenesServicioPage() {
                           value={descFotoNueva}
                           onChange={(e) => setDescFotoNueva(e.target.value)}
                         />
-                        <Upload
-                          accept="image/*"
-                          showUploadList={false}
-                          beforeUpload={(file) => {
-                            const reader = new FileReader()
-                            reader.onload = () => {
-                              subirFotoDetalle.mutate({
-                                categoria: catFotoNueva,
-                                descripcion: descFotoNueva,
-                                imagenUrl: String(reader.result),
-                              })
-                              setDescFotoNueva('')
-                            }
-                            reader.readAsDataURL(file)
-                            return false
-                          }}
+                        <Button
+                          type="primary"
+                          icon={<CameraOutlined />}
+                          loading={subirFotoDetalle.isPending}
+                          onClick={() => setPhotoModalTarget('detalle')}
                         >
-                          <Button type="primary" icon={<CameraOutlined />} loading={subirFotoDetalle.isPending}>
-                            Subir Fotografía
-                          </Button>
-                        </Upload>
+                          Capturar / Subir Fotografía
+                        </Button>
                       </Space>
                     </Card>
 
@@ -1192,6 +1615,23 @@ export default function OrdenesServicioPage() {
           />
         )}
       </Drawer>
+
+      <PhotoCaptureModal
+        open={photoModalTarget !== null}
+        onClose={() => setPhotoModalTarget(null)}
+        categoriaInicial={catFotoNueva}
+        descripcionInicial={descFotoNueva}
+        onConfirm={(foto) => {
+          if (photoModalTarget === 'recepcion') {
+            setFotosRecepcion((prev) => [...prev, foto])
+            setDescFotoNueva('')
+            message.success('Fotografía agregada a la recepción')
+          } else if (photoModalTarget === 'detalle') {
+            subirFotoDetalle.mutate(foto)
+            setDescFotoNueva('')
+          }
+        }}
+      />
     </>
   )
 }

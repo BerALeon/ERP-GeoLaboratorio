@@ -389,6 +389,52 @@ public class OrdenServicioService(IUnitOfWork uow, IPdfService pdf, IQrService q
         var bytes = pdf.GenerateReporteTecnico(os, qr.GeneratePng(os.Folio));
         return new PdfFile(bytes, $"Reporte_{os.Folio}.pdf");
     }
+
+    private static readonly HashSet<string> CondicionesBaseSet = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Sin daños visibles", "Golpes", "Rayones", "Equipo mojado",
+        "Pantalla dañada", "Teclado dañado", "Equipo incompleto", "Con piezas faltantes", "Otro"
+    };
+
+    public async Task<IReadOnlyList<string>> GetCondicionesPersonalizadasAsync(CancellationToken ct = default)
+    {
+        var sugeridas = new List<string>
+        {
+            "Lente empañado / sucio",
+            "Plomada láser descalibrada",
+            "Tornillo nivelante duro / barrido",
+            "Tapa de batería dañada",
+            "Puerto / conector con falso contacto",
+            "Burbuja circular desajustada"
+        };
+
+        var jsons = await uow.OrdenesServicio.Query()
+            .AsNoTracking()
+            .Where(o => o.CondicionChecklistJson != null && o.CondicionChecklistJson != "[]")
+            .Select(o => o.CondicionChecklistJson)
+            .ToListAsync(ct);
+
+        var set = new HashSet<string>(sugeridas, StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in jsons)
+        {
+            try
+            {
+                var items = JsonSerializer.Deserialize<List<string>>(raw);
+                if (items is null) continue;
+                foreach (var item in items)
+                {
+                    var clean = item?.Trim();
+                    if (!string.IsNullOrWhiteSpace(clean) && !CondicionesBaseSet.Contains(clean))
+                        set.Add(clean);
+                }
+            }
+            catch
+            {
+                // Ignorar JSON malformado
+            }
+        }
+        return set.OrderBy(x => x).ToList();
+    }
 }
 
 public class InventarioService(IUnitOfWork uow, ICurrentUser user) : IInventarioService

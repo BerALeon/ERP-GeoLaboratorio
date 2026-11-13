@@ -758,6 +758,7 @@ public interface IOrdenServicioService
     Task<OrdenServicioFotoDto> AgregarFotoAsync(int id, OrdenServicioFotoCreateDto d, CancellationToken ct = default);
     Task EliminarFotoAsync(int id, int fotoId, CancellationToken ct = default);
     Task<PdfFile> GetReportePdfAsync(int id, CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetCondicionesPersonalizadasAsync(CancellationToken ct = default);
 }
 
 public interface IInventarioService

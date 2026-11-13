@@ -142,6 +142,10 @@ public class OrdenesServicioController(IOrdenServicioService svc) : ControllerBa
         return File(f.Content, "application/pdf", f.FileName);
     }
 
+    [HttpGet("condiciones-personalizadas")]
+    public async Task<IReadOnlyList<string>> CondicionesPersonalizadas(CancellationToken ct)
+        => await svc.GetCondicionesPersonalizadasAsync(ct);
+
     [HttpGet("catalogos")]
     public object Catalogos() => new
     {
