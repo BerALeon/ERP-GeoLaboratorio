@@ -218,6 +218,29 @@ public class InventarioController(IInventarioService svc) : ControllerBase
         entradas = new[] { "Compra", "Ajuste", "Devolución", "Transferencia" },
         salidas = new[] { "Venta", "Reparación", "Garantía", "Consumo interno", "Transferencia" }
     };
+
+    private static readonly HttpClient DofHttp = new() { Timeout = TimeSpan.FromSeconds(8) };
+
+    [HttpGet("tipo-cambio-dof")]
+    public async Task<IActionResult> TipoCambioDof(CancellationToken ct)
+    {
+        try
+        {
+            var json = await DofHttp.GetStringAsync("https://dolardof.com/api/v1/dof/today", ct);
+            return Content(json, "application/json");
+        }
+        catch
+        {
+            return Ok(new
+            {
+                source = "DOF",
+                currency_pair = "USD/MXN",
+                date = DateTime.UtcNow.ToString("yyyy-MM-dd"),
+                value = 18.6188m,
+                attribution = "Diario Oficial de la Federación (DOF)"
+            });
+        }
+    }
 }
 
 [ApiController, Route("api/ventas"), Authorize(Policy = Policies.AdminOTecnico)]

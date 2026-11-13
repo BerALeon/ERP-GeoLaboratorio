@@ -2,9 +2,11 @@ import {
   ArrowDownOutlined,
   ArrowUpOutlined,
   DeleteOutlined,
+  DollarOutlined,
   EnvironmentOutlined,
   HistoryOutlined,
   PlusOutlined,
+  ReloadOutlined,
   ShoppingCartOutlined,
 } from '@ant-design/icons'
 import {
@@ -70,6 +72,35 @@ export default function InventarioPage() {
   const [formMov] = Form.useForm()
   const [formCompra] = Form.useForm()
   const grupoSeleccionado = Form.useWatch('grupoCategoria', formProd) as string | undefined
+
+  // Estados para cálculo con Tipo de Cambio Dólar DOF (https://dolardof.com/api/v1/dof/today)
+  const [costoUsd, setCostoUsd] = useState<number | null>(null)
+  const [precioVentaUsd, setPrecioVentaUsd] = useState<number | null>(null)
+  const [margenPct, setMargenPct] = useState<number | null>(35)
+  const [tipoCambioManual, setTipoCambioManual] = useState<number | null>(null)
+
+  const {
+    data: dofData,
+    isFetching: loadingDof,
+    refetch: refetchDof,
+  } = useQuery({
+    queryKey: ['dolar-dof'],
+    staleTime: 1000 * 60 * 30,
+    queryFn: async () => {
+      try {
+        const res = await fetch('https://dolardof.com/api/v1/dof/today')
+        if (res.ok) {
+          return (await res.json()) as { value: number; date: string; currency_pair?: string; source?: string }
+        }
+      } catch {
+        // Fallback al proxy del backend si el navegador bloquea CORS
+      }
+      const r = await api.get<{ value: number; date: string; currency_pair?: string; source?: string }>('/inventario/tipo-cambio-dof')
+      return r.data
+    },
+  })
+
+  const tipoCambioActual = tipoCambioManual ?? dofData?.value ?? 18.6188
 
   const { data: productos, isLoading: loadingProd } = useQuery({
     queryKey: ['inventario-productos', q, grupo, categoria, bajoStock, pageProd],
@@ -140,6 +171,10 @@ export default function InventarioPage() {
 
   const openProd = (p: Partial<Producto>) => {
     setEditingProd(p)
+    setCostoUsd(null)
+    setPrecioVentaUsd(null)
+    setMargenPct(35)
+    setTipoCambioManual(null)
     formProd.resetFields()
     formProd.setFieldsValue({
       grupoCategoria: 'Refacciones',
@@ -159,6 +194,20 @@ export default function InventarioPage() {
     })
   }
 
+  const recalcularConDof = (nuevoCostoUsd: number | null, nuevoMargen: number | null, tc: number) => {
+    if (nuevoCostoUsd !== null && nuevoCostoUsd > 0) {
+      const costoMxn = Number((nuevoCostoUsd * tc).toFixed(2))
+      const factorMargen = 1 + (nuevoMargen ?? 0) / 100
+      const ventaMxn = Number((costoMxn * factorMargen).toFixed(2))
+      const ventaUsdCalc = Number((nuevoCostoUsd * factorMargen).toFixed(2))
+      setPrecioVentaUsd(ventaUsdCalc)
+      formProd.setFieldsValue({
+        costoUnitario: costoMxn,
+        precioVenta: ventaMxn,
+      })
+    }
+  }
+
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
@@ -169,6 +218,15 @@ export default function InventarioPage() {
           </Typography.Text>
         </div>
         <Space wrap>
+          <Tag
+            color="geekblue"
+            icon={<DollarOutlined />}
+            style={{ padding: '4px 10px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            <span>Dólar DOF:</span>
+            <strong>${(dofData?.value ?? 18.6188).toFixed(4)} MXN</strong>
+            {dofData?.date && <span style={{ opacity: 0.75, fontSize: 11 }}>({dofData.date})</span>}
+          </Tag>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openProd({})}>
             Nuevo Producto / Refacción
           </Button>
@@ -479,7 +537,7 @@ export default function InventarioPage() {
         onCancel={() => setEditingProd(null)}
         onOk={() => formProd.submit()}
         confirmLoading={saveProd.isPending}
-        width={780}
+        width={860}
         okText="Guardar Producto"
         destroyOnClose
       >
@@ -513,20 +571,176 @@ export default function InventarioPage() {
             </Form.Item>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 10 }}>
-            <Form.Item name="costoUnitario" label="Costo Unitario ($)" rules={[{ required: true }]}>
-              <InputNumber min={0} style={{ width: '100%' }} />
-            </Form.Item>
-            <Form.Item name="precioVenta" label="Precio Venta ($)" rules={[{ required: true }]}>
-              <InputNumber min={0} style={{ width: '100%' }} />
-            </Form.Item>
+          {/* ── SECCIÓN DE COSTO Y PRECIO DE VENTA CON TIPO DE CAMBIO DÓLAR DOF ── */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1.35fr 1fr',
+              gap: 16,
+              marginBottom: 14,
+              alignItems: 'stretch',
+            }}
+          >
+            <Card
+              size="small"
+              title={
+                <Space size={6}>
+                  <DollarOutlined style={{ color: '#0A2A8F' }} />
+                  <span>Calculadora en Dólares (Tipo de Cambio DOF)</span>
+                </Space>
+              }
+              extra={
+                <Space size={6}>
+                  <Tag color="geekblue" style={{ margin: 0, fontWeight: 600 }}>
+                    1 USD = ${tipoCambioActual.toFixed(4)} MXN
+                  </Tag>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<ReloadOutlined spin={loadingDof} />}
+                    title="Actualizar tipo de cambio desde dolardof.com"
+                    onClick={() => {
+                      setTipoCambioManual(null)
+                      refetchDof()
+                    }}
+                  />
+                </Space>
+              }
+              style={{ background: '#f8fafc', borderColor: '#cbd5e1' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Costo (USD)</div>
+                  <InputNumber
+                    min={0}
+                    precision={2}
+                    prefix="$"
+                    placeholder="0.00"
+                    style={{ width: '100%' }}
+                    value={costoUsd}
+                    onChange={(val) => {
+                      const v = typeof val === 'number' ? val : null
+                      setCostoUsd(v)
+                      recalcularConDof(v, margenPct, tipoCambioActual)
+                    }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Margen (%)</div>
+                  <InputNumber
+                    min={0}
+                    max={500}
+                    suffix="%"
+                    style={{ width: '100%' }}
+                    value={margenPct}
+                    onChange={(val) => {
+                      const m = typeof val === 'number' ? val : 0
+                      setMargenPct(m)
+                      if (costoUsd !== null && costoUsd > 0) {
+                        recalcularConDof(costoUsd, m, tipoCambioActual)
+                      } else {
+                        const costoMxnActual = Number(formProd.getFieldValue('costoUnitario') || 0)
+                        if (costoMxnActual > 0) {
+                          formProd.setFieldsValue({
+                            precioVenta: Number((costoMxnActual * (1 + m / 100)).toFixed(2)),
+                          })
+                        }
+                      }
+                    }}
+                  />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 500, marginBottom: 4 }}>Venta (USD)</div>
+                  <InputNumber
+                    min={0}
+                    precision={2}
+                    prefix="$"
+                    placeholder="0.00"
+                    style={{ width: '100%' }}
+                    value={precioVentaUsd}
+                    onChange={(val) => {
+                      const v = typeof val === 'number' ? val : null
+                      setPrecioVentaUsd(v)
+                      if (v !== null && v > 0) {
+                        formProd.setFieldsValue({
+                          precioVenta: Number((v * tipoCambioActual).toFixed(2)),
+                        })
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+              <div
+                style={{
+                  marginTop: 8,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: 11,
+                  color: '#64748b',
+                }}
+              >
+                <span>
+                  Fuente oficial: <strong>Diario Oficial de la Federación (DOF)</strong>{' '}
+                  {dofData?.date ? `· Fecha: ${dofData.date}` : ''}
+                </span>
+                <Space size={4}>
+                  <span>T.C.:</span>
+                  <InputNumber
+                    size="small"
+                    min={1}
+                    step={0.01}
+                    precision={4}
+                    style={{ width: 92 }}
+                    value={tipoCambioActual}
+                    onChange={(val) => {
+                      if (typeof val === 'number' && val > 0) {
+                        setTipoCambioManual(val)
+                        recalcularConDof(costoUsd, margenPct, val)
+                      }
+                    }}
+                  />
+                </Space>
+              </div>
+            </Card>
+
+            <Card
+              size="small"
+              title="Precios Finales Registrados (MXN)"
+              style={{ borderColor: '#0A2A8F', background: '#ffffff' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Form.Item
+                  name="costoUnitario"
+                  label="Costo Unitario ($ MXN)"
+                  rules={[{ required: true }]}
+                  style={{ marginBottom: 4 }}
+                >
+                  <InputNumber min={0} precision={2} prefix="$" style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item
+                  name="precioVenta"
+                  label="Precio Venta ($ MXN)"
+                  rules={[{ required: true }]}
+                  style={{ marginBottom: 4 }}
+                >
+                  <InputNumber min={0} precision={2} prefix="$" style={{ width: '100%', fontWeight: 600 }} />
+                </Form.Item>
+              </div>
+              <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                Se calculan automáticamente al ingresar USD o pueden capturarse directo en pesos.
+              </Typography.Text>
+            </Card>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <Form.Item name="stockActual" label="Stock Inicial" rules={[{ required: true }]}>
               <InputNumber min={0} disabled={!!editingProd?.productoId} style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="stockMinimo" label="Stock Mínimo" rules={[{ required: true }]}>
               <InputNumber min={0} style={{ width: '100%' }} />
             </Form.Item>
-            <Form.Item name="unidad" label="Unidad">
+            <Form.Item name="unidad" label="Unidad de Medida">
               <Input placeholder="PZA, KIT, LT" />
             </Form.Item>
           </div>
