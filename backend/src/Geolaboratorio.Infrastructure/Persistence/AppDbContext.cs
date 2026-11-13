@@ -62,6 +62,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser c
             e.Property(x => x.Telefono).HasMaxLength(30);
             e.Property(x => x.Correo).HasMaxLength(150);
             e.Property(x => x.Contacto).HasMaxLength(150);
+            e.Property(x => x.ContactosJson).HasMaxLength(4000);
         });
 
         b.Entity<Equipo>(e =>

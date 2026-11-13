@@ -100,6 +100,7 @@ public static class DbSeeder
         var isSqlite = db.Database.ProviderName?.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) == true;
         if (!isSqlite)
         {
+            await EnsureColumnAsync(db, "Clientes", "ContactosJson", " VARCHAR(4000) NULL");
             await EnsureColumnAsync(db, "Equipos", "CodigoQR", "VARCHAR(120) NULL");
             await EnsureColumnAsync(db, "Equipos", "CodigoBarras", "VARCHAR(120) NULL");
             await EnsureColumnAsync(db, "Equipos", "Estatus", "VARCHAR(30) NOT NULL DEFAULT 'Activo'");
@@ -108,6 +109,17 @@ public static class DbSeeder
 
             await EnsureColumnAsync(db, "Certificados", "OrdenServicioId", "INT NULL");
             await EnsureColumnAsync(db, "Certificados", "TipoRegistro", "VARCHAR(30) NOT NULL DEFAULT 'Calibración'");
+        }
+        else
+        {
+            try
+            {
+                await db.Database.ExecuteSqlRawAsync("ALTER TABLE Clientes ADD COLUMN ContactosJson TEXT NULL;");
+            }
+            catch
+            {
+                // La columna ya existe en SQLite
+            }
         }
 
         if (!await db.ConfiguracionVigencias.AnyAsync())

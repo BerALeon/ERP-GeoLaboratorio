@@ -12,10 +12,14 @@ public record UsuarioDto(int UsuarioId, string Nombre, string Correo, string Rol
 public record UsuarioCreateDto(string Nombre, string Correo, string Password, RolUsuario Rol);
 public record UsuarioUpdateDto(string Nombre, RolUsuario Rol, bool Activo, string? Password);
 
+public record ClienteContactoDto(string NombreCompleto, string Telefono, string? Nota = null);
+
 public record ClienteDto(int ClienteId, string RazonSocial, string? NombreComercial, string RFC, string? Direccion,
-    string? Ciudad, string? Estado, string? Pais, string? Telefono, string? Correo, string? Contacto, int TotalEquipos);
+    string? Ciudad, string? Estado, string? Pais, string? Telefono, string? Correo, string? Contacto, int TotalEquipos,
+    IReadOnlyList<ClienteContactoDto>? Contactos = null);
 public record ClienteSaveDto(string RazonSocial, string? NombreComercial, string RFC, string? Direccion,
-    string? Ciudad, string? Estado, string? Pais, string? Telefono, string? Correo, string? Contacto);
+    string? Ciudad, string? Estado, string? Pais, string? Telefono, string? Correo, string? Contacto,
+    IReadOnlyList<ClienteContactoDto>? Contactos = null);
 
 // ───────────── DTOs: Equipos, Series y Expediente 360° ─────────────
 public record EquipoSerieDto(int? EquipoSerieId, string TipoSerie, string Valor, string? Observaciones = null);

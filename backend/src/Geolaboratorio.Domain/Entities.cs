@@ -54,6 +54,7 @@ public class Cliente : AuditableEntity
     public string? Telefono { get; set; }
     public string? Correo { get; set; }
     public string? Contacto { get; set; }
+    public string? ContactosJson { get; set; }
     public bool Activo { get; set; } = true;
     public ICollection<Equipo> Equipos { get; set; } = new List<Equipo>();
     public ICollection<OrdenServicio> OrdenesServicio { get; set; } = new List<OrdenServicio>();

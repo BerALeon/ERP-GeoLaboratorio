@@ -93,6 +93,14 @@ public class ClienteService(IUnitOfWork uow) : IClienteService
         c.RazonSocial = d.RazonSocial.Trim(); c.NombreComercial = d.NombreComercial?.Trim(); c.RFC = d.RFC.Trim().ToUpperInvariant();
         c.Direccion = d.Direccion; c.Ciudad = d.Ciudad; c.Estado = d.Estado; c.Pais = d.Pais; c.Telefono = d.Telefono;
         c.Correo = d.Correo; c.Contacto = d.Contacto;
+        if (d.Contactos is not null)
+        {
+            var limpios = d.Contactos
+                .Where(x => !string.IsNullOrWhiteSpace(x.NombreCompleto) || !string.IsNullOrWhiteSpace(x.Telefono))
+                .Select(x => new ClienteContactoDto(x.NombreCompleto?.Trim() ?? "", x.Telefono?.Trim() ?? "", x.Nota?.Trim()))
+                .ToList();
+            c.ContactosJson = System.Text.Json.JsonSerializer.Serialize(limpios);
+        }
     }
 
     public async Task<ClienteDto> CreateAsync(ClienteSaveDto d, CancellationToken ct = default)

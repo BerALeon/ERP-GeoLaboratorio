@@ -4,9 +4,16 @@ export interface Usuario { usuarioId: number; nombre: string; correo: string; ro
 export interface LoginResponse { token: string; expira: string; usuario: Usuario }
 export interface Paged<T> { items: T[]; total: number; page: number; pageSize: number }
 
+export interface ClienteContacto {
+  nombreCompleto: string
+  telefono: string
+  nota?: string
+}
+
 export interface Cliente {
   clienteId: number; razonSocial: string; nombreComercial?: string; rfc: string; direccion?: string; ciudad?: string
   estado?: string; pais?: string; telefono?: string; correo?: string; contacto?: string; totalEquipos: number
+  contactos?: ClienteContacto[]
 }
 
 export interface EquipoSerie {

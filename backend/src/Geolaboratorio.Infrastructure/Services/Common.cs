@@ -62,9 +62,23 @@ public static class Mapper
         return list;
     }
 
+    public static IReadOnlyList<ClienteContactoDto> ParseContactos(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return [];
+        try
+        {
+            return JsonSerializer.Deserialize<List<ClienteContactoDto>>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     public static ClienteDto ToDto(this Cliente c, int equipos) => new(
         c.ClienteId, c.RazonSocial, c.NombreComercial, c.RFC,
-        c.Direccion, c.Ciudad, c.Estado, c.Pais, c.Telefono, c.Correo, c.Contacto, equipos);
+        c.Direccion, c.Ciudad, c.Estado, c.Pais, c.Telefono, c.Correo, c.Contacto, equipos,
+        ParseContactos(c.ContactosJson));
 
     public static EquipoDto ToDto(this Equipo e) => new(
         e.EquipoId,
