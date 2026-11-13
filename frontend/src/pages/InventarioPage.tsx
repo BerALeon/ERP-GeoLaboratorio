@@ -218,15 +218,6 @@ export default function InventarioPage() {
           </Typography.Text>
         </div>
         <Space wrap>
-          <Tag
-            color="geekblue"
-            icon={<DollarOutlined />}
-            style={{ padding: '4px 10px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 4 }}
-          >
-            <span>Dólar DOF:</span>
-            <strong>${(dofData?.value ?? 18.6188).toFixed(4)} MXN</strong>
-            {dofData?.date && <span style={{ opacity: 0.75, fontSize: 11 }}>({dofData.date})</span>}
-          </Tag>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openProd({})}>
             Nuevo Producto / Refacción
           </Button>
